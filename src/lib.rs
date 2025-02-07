@@ -140,7 +140,16 @@ fn three_key_lookup() {
     tree.insert(b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc", b"squirrel");
     tree.insert(b"284afea09032d2daf30f98cfc36e4b2205cbf6e4edb69994c7261e6287b60609", b"dog");
     tree.insert(b"284acat", b"cat");
+
+    let (key, proof, root_commitment) = tree.generate_proof(b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc").unwrap();
+    assert_eq!(proof, [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]);
+
+    let (key, proof, root_commitment) = tree.generate_proof(b"284afea09032d2daf30f98cfc36e4b2205cbf6e4edb69994c7261e6287b60609").unwrap();
+    assert_eq!(proof, [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]);
     
     let (key, proof, root_commitment) = tree.generate_proof(b"284acat").unwrap();
     assert_eq!(proof, [[], [], [], [], [], [], []]);
+    
+    let unknown_key_proof = tree.generate_proof(b"284acats");
+    assert_eq!(unknown_key_proof, None);
 }
