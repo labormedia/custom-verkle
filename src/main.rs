@@ -50,4 +50,5 @@ fn main() {
     } else {
         println!("No proof found for key");
     }
+    // println!("Tree: {:?}", tree);
 }

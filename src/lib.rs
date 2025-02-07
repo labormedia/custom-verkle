@@ -1,10 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    BTreeMap,
+};
 use sha2::{Digest, Sha256};
 
 /// A basic Verkle Tree Node
 #[derive(Debug, Clone)]
 enum VerkleNode {
-    InnerNode { children: HashMap<u8, Box<VerkleNode>>, commitment: Vec<u8> },
+    InnerNode { children: BTreeMap<u8, Box<VerkleNode>>, commitment: Vec<u8> },
     LeafNode { key: Vec<u8>, value: Vec<u8> },
 }
 
@@ -20,7 +23,7 @@ impl VerkleTree {
     pub fn new() -> Self {
         VerkleTree {
             root: VerkleNode::InnerNode {
-                children: HashMap::new(),
+                children: BTreeMap::new(),
                 commitment: vec![],
             },
             stored_commitment: vec![],
@@ -37,7 +40,7 @@ impl VerkleTree {
                     current_node = children
                         .entry(*byte)
                         .or_insert_with(|| Box::new(VerkleNode::InnerNode { 
-                            children: HashMap::new(), 
+                            children: BTreeMap::new(), 
                             commitment: vec![] 
                         }));
                 }
