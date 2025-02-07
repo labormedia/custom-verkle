@@ -41,7 +41,7 @@ impl VerkleTree {
                             commitment: vec![] 
                         }));
                 }
-                _ => panic!("Trying to insert into a leaf node!"),
+                _ => panic!("Trying to insert into a leaf node!"), // It's ok to panic if the algorithm is not able to insert a correct-typed key and value
             }
         }
         
