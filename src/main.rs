@@ -17,4 +17,11 @@ fn main() {
     // Compute commitment
     let commitment = tree.compute_commitment();
     println!("Commitment: {:?}", hex::encode(commitment));
+    
+    // Verify commitment
+    if tree.verify_commitment() {
+        println!("Commitment is valid");
+    } else {
+        println!("Commitment verification failed");
+    }
 }

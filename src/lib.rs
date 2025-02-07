@@ -12,6 +12,7 @@ enum VerkleNode {
 #[derive(Debug)]
 pub struct VerkleTree {
     root: VerkleNode,
+    stored_commitment: Vec<u8>,
 }
 
 impl VerkleTree {
@@ -22,6 +23,7 @@ impl VerkleTree {
                 children: HashMap::new(),
                 commitment: vec![],
             },
+            stored_commitment: vec![],
         }
     }
 
@@ -47,6 +49,9 @@ impl VerkleTree {
             key: key.to_vec(),
             value: value.to_vec(),
         };
+
+        // Update the stored commitment after insertion
+        self.stored_commitment = self.compute_commitment();
     }
 
     /// Retrieves a value given a key
@@ -92,5 +97,11 @@ impl VerkleTree {
                 hasher.update(value);
             }
         }
+    }
+
+    /// Verifies if the stored commitment matches the computed commitment
+    pub fn verify_commitment(&self) -> bool {
+        let computed_commitment = self.compute_commitment();
+        self.stored_commitment == computed_commitment
     }
 }
