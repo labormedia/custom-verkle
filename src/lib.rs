@@ -104,4 +104,43 @@ impl VerkleTree {
         let computed_commitment = self.compute_commitment();
         self.stored_commitment == computed_commitment
     }
+
+    /// Generates a proof for a given key
+    pub fn generate_proof(&self, key: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>, Vec<u8>)> {
+        let mut current_node = &self.root;
+        let mut proof = Vec::new();
+
+        for byte in key {
+            match current_node {
+                VerkleNode::InnerNode { children, commitment } => {
+                    proof.push(commitment.clone());
+                    if let Some(child) = children.get(byte) {
+                        current_node = child;
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            }
+        }
+
+        if let VerkleNode::LeafNode { key, value } = current_node {
+            Some((key.clone(), proof, self.stored_commitment.clone()))
+        } else {
+            None
+        }
+    }
+}
+
+#[test]
+fn three_key_lookup() {
+    let mut tree = VerkleTree::new();
+    
+    // Insert values
+    tree.insert(b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc", b"squirrel");
+    tree.insert(b"284afea09032d2daf30f98cfc36e4b2205cbf6e4edb69994c7261e6287b60609", b"dog");
+    tree.insert(b"284acat", b"cat");
+    
+    let (key, proof, root_commitment) = tree.generate_proof(b"284acat").unwrap();
+    assert_eq!(proof, [[], [], [], [], [], [], []]);
 }
