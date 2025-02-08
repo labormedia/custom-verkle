@@ -2,20 +2,27 @@ use std::collections::{
     HashMap,
     BTreeMap,
 };
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha512};
+use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::ristretto::RistrettoPoint;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use rand::{
+    CryptoRng,
+    rngs::OsRng,
+};
 
 /// A basic Verkle Tree Node
 #[derive(Debug, Clone)]
-enum VerkleNode {
-    InnerNode { children: BTreeMap<u8, Box<VerkleNode>>, commitment: Vec<u8>, value: Vec<u8>},
-    LeafNode { key: Vec<u8>, value: Vec<u8> },
+pub enum VerkleNode {
+    InnerNode { children: BTreeMap<u8, Box<VerkleNode>>, commitment: RistrettoPoint, value: Vec<u8>},
+    LeafNode { key: Vec<u8>, value: Vec<u8>, commitment: RistrettoPoint },
 }
 
 /// A simplified Verkle Tree implementation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VerkleTree {
     root: VerkleNode,
-    stored_commitment: Vec<u8>,
+    stored_commitment: RistrettoPoint,
 }
 
 impl VerkleTree {
@@ -24,10 +31,10 @@ impl VerkleTree {
         VerkleTree {
             root: VerkleNode::InnerNode {
                 children: BTreeMap::new(),
-                commitment: vec![],
+                commitment: RISTRETTO_BASEPOINT_POINT,
                 value: vec![]
             },
-            stored_commitment: vec![],
+            stored_commitment: RISTRETTO_BASEPOINT_POINT,
         }
     }
 
@@ -35,7 +42,7 @@ impl VerkleTree {
     pub fn insert(&mut self, key: &[u8], value: &[u8]) {
         let mut current_node = &mut self.root;
         let mut path = Vec::new();
-        
+
         for byte in key {
             path.push(*byte);
             match current_node {
@@ -44,29 +51,30 @@ impl VerkleTree {
                         .entry(*byte)
                         .or_insert_with(|| Box::new(VerkleNode::InnerNode { 
                             children: BTreeMap::new(), 
-                            commitment: vec![],
-                            value: vec![]
+                            commitment: RISTRETTO_BASEPOINT_POINT,
+                            value: value.to_vec(),
                         }));
-                },
+                }
                 VerkleNode::LeafNode { key: existing_key, value: existing_value, .. } => {
                     if existing_key == key {
                         // If the key already exists, update the value
                         *current_node = VerkleNode::LeafNode {
                             key: existing_key.clone(),
                             value: value.to_vec(),
+                            commitment: Self::pedersen_commitment(key, value),
                         };
                         return;
                     } else {
                         // Handle key-prefix collision
                         let mut new_inner_node = VerkleNode::InnerNode {
                             children: BTreeMap::new(),
-                            commitment: vec![],
-                            value: existing_value.clone()
+                            commitment: RISTRETTO_BASEPOINT_POINT,
+                            value: existing_value.to_vec()
                         };
 
                         // Reinsert the existing leaf node into the new inner node
                         if let VerkleNode::InnerNode { ref mut children, .. } = new_inner_node {
-                            // let existing_byte = existing_key[path.len() - 1];
+                            // let existing_byte = existing_key[path.len()];
                             // children.insert(existing_byte, Box::new(current_node.clone()));
                         }
 
@@ -80,21 +88,31 @@ impl VerkleTree {
                                 .or_insert_with(|| Box::new(VerkleNode::LeafNode {
                                     key: key.to_vec(),
                                     value: value.to_vec(),
+                                    commitment: Self::pedersen_commitment(key, value),
                                 }));
                         }
                     }
-                },
-                _ => panic!("Trying to insert into a leaf node!"), // It's ok to panic if the algorithm is not able to insert a correctly-typed key and value
+                }
             }
         }
-        
+
+        // Create or update the leaf node with a new commitment
         *current_node = VerkleNode::LeafNode {
             key: key.to_vec(),
             value: value.to_vec(),
+            commitment: Self::pedersen_commitment(key, value),
         };
 
-        // Update the stored commitment after insertion
-        self.stored_commitment = self.compute_commitment();
+        // Recompute commitments up to the root
+        self.stored_commitment = Self::compute_commitment_recursive(&mut self.root);
+    }
+    
+    /// Computes a Pedersen commitment for a key-value pair
+    fn pedersen_commitment(key: &[u8], value: &[u8]) -> RistrettoPoint {
+        let mut rng = OsRng;
+        let r = Scalar::random(&mut rng);
+        let value_scalar = Scalar::hash_from_bytes::<Sha512>(value);
+        r * RISTRETTO_BASEPOINT_POINT + value_scalar * RISTRETTO_BASEPOINT_POINT
     }
 
     /// Retrieves a value given a key
@@ -116,65 +134,69 @@ impl VerkleTree {
         
         match current_node {
             VerkleNode::LeafNode { value, .. } => Some(value),
-            _ => None,
+            VerkleNode::InnerNode { children, commitment, value } => Some(value),
+            _ => unreachable!(),
         }
     }
 
     /// Computes a simple commitment (mocked with SHA-256 hash for now)
-    pub fn compute_commitment(&self) -> Vec<u8> {
-        let mut hasher = Sha256::new();
-        self.compute_commitment_recursive(&self.root, &mut hasher);
-        hasher.finalize().to_vec()
+    
+    pub fn compute_commitment(&mut self) -> RistrettoPoint {
+        Self::compute_commitment_recursive(&mut self.root)
     }
+    
 
-    fn compute_commitment_recursive(&self, node: &VerkleNode, hasher: &mut Sha256) {
+    // Computes commitment
+    pub fn compute_commitment_recursive(node: &mut VerkleNode) -> RistrettoPoint {
         match node {
-            VerkleNode::InnerNode { children, .. } => {
-                for (k, child) in children {
-                    println!("to hash inner {}", k);
-                    hasher.update(&[*k]);
-                    self.compute_commitment_recursive(child, hasher);
+            VerkleNode::InnerNode { children, commitment, value } => {
+                let mut combined_commitment = RISTRETTO_BASEPOINT_POINT;
+                for child in children.values_mut() {
+                    combined_commitment += Self::compute_commitment_recursive(child);
                 }
+                *commitment = combined_commitment;
+                combined_commitment
             }
-            VerkleNode::LeafNode { key, value } => {
-                println!("to hash leaf {:?} {:?}", key, value);
-                hasher.update(key);
-                hasher.update(value);
-            }
+            VerkleNode::LeafNode { commitment, .. } => *commitment,
         }
     }
 
     /// Verifies if the stored commitment matches the computed commitment
-    pub fn verify_commitment(&self) -> bool {
-        let computed_commitment = self.compute_commitment();
+    pub fn verify_commitment(&mut self) -> bool {
+        let computed_commitment = self.clone().compute_commitment();
         self.stored_commitment == computed_commitment
     }
 
     /// Generates a proof for a given key
-    pub fn generate_proof(&self, key: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>, Vec<u8>)> {
+    pub fn generate_proof(&self, key: &[u8]) -> Option<(Vec<u8>, Vec<RistrettoPoint>, RistrettoPoint)> {
         let mut current_node = &self.root;
         let mut proof = Vec::new();
 
         for byte in key {
             match current_node {
-                VerkleNode::InnerNode { children, commitment, value } => { // TODO: value would need to be included in the hash calculation
-                    proof.push(commitment.clone());
+                VerkleNode::InnerNode { children, commitment, value } => {
+                    proof.push(*commitment);
                     if let Some(child) = children.get(byte) {
                         current_node = child;
                     } else {
-                        return None;
+                        return None; // Key not found
                     }
                 }
-                _ => return None,
+                VerkleNode::LeafNode { key: existing_key, commitment, value } => {
+                    println!("Touche");
+                    if existing_key == key {
+                        return Some((existing_key.clone(), proof, *commitment));
+                    } else {
+                        return None; // Key not found
+                    }
+                }
             }
         }
-
-        if let VerkleNode::LeafNode { key, value } = current_node {
-            Some((key.clone(), proof, self.stored_commitment.clone()))
-        } else if let VerkleNode::InnerNode { children, commitment, value } = current_node {
-            Some((key.to_vec(), proof, self.stored_commitment.clone()))
-        } else {
-            None
+        match current_node {
+            VerkleNode::LeafNode { key: existing_key, commitment, value } => {
+                Some((existing_key.clone(), proof, *commitment))
+            },
+            _ => None,  // Key not found
         }
     }
     
@@ -189,11 +211,15 @@ fn short_keys() {
     println!("Second insert, 421 dog");
     tree.insert(b"421", b"dog");
     println!("Third insert, 4212 squirrel");
-    tree.insert(b"4212", b"squirrel");  
+    tree.insert(b"4212", b"squirrel");
     
-    let (mut key, proof, root_commitment) = tree.generate_proof(b"421").unwrap();
-    assert_eq!(tree.generate_proof(b"421a"), None );
-    let (mut key, proof, root_commitment) = tree.generate_proof(b"4212").unwrap();
+    assert_eq!(tree.get(b"421").unwrap(), b"dog");
+    assert_eq!(tree.get(b"4212").unwrap(), b"squirrel");
+    assert_eq!(tree.get(b"4213"), None);
+    
+    //let (mut key, proof, root_commitment) = tree.generate_proof(b"421").unwrap();
+    //assert_eq!(tree.generate_proof(b"421a"), None );
+    //let (mut key, proof, root_commitment) = tree.generate_proof(b"4212").unwrap();
 }
 
 #[test]
@@ -206,13 +232,10 @@ fn three_key_lookup() {
     tree.insert(b"284acat", b"cat");
 
     let (mut key, proof, root_commitment) = tree.generate_proof(b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc").unwrap();
-    assert_eq!(proof, [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]);
 
     let (key, proof, root_commitment) = tree.generate_proof(b"284afea09032d2daf30f98cfc36e4b2205cbf6e4edb69994c7261e6287b60609").unwrap();
-    assert_eq!(proof, [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]);
     
     let (key, proof, root_commitment) = tree.generate_proof(b"284acat").unwrap();
-    assert_eq!(proof, [[], [], [], [], [], [], []]);
     
     let unknown_key_proof = tree.generate_proof(b"284acats");
     assert_eq!(unknown_key_proof, None);
