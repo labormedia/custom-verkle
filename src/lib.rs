@@ -208,6 +208,9 @@ impl VerkleTree {
             VerkleNode::LeafNode { key: existing_key, commitment, value: existing_value } => {
                 Some(((existing_key.clone(), existing_value.clone()), proof, *commitment))
             },
+            VerkleNode::InnerNode { commitments, value: existing_value, .. } => {
+                Some(((key.to_vec(), existing_value.clone()), proof, commitments[0]))
+            },
             _ => None,  // Key not found
         }
     }
@@ -228,10 +231,14 @@ fn short_keys() {
     assert_eq!(tree.get(b"421").unwrap(), b"dog");
     assert_eq!(tree.get(b"4212").unwrap(), b"squirrel");
     assert_eq!(tree.get(b"4213"), None);
+    assert_eq!(tree.generate_proof(b"421a"), None );
     
-    //let (mut key, proof, root_commitment) = tree.generate_proof(b"421").unwrap();
-    //assert_eq!(tree.generate_proof(b"421a"), None );
-    //let (mut key, proof, root_commitment) = tree.generate_proof(b"4212").unwrap();
+    let ((key, value), proof, commitment) = tree.generate_proof(b"421").unwrap();
+    assert_eq!(value, b"dog");
+    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
+    let ((key, value), proof, commitment) = tree.generate_proof(b"4212").unwrap();
+    assert_eq!(value, b"squirrel");
+    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
 }
 
 #[test]
@@ -244,15 +251,16 @@ fn three_key_lookup() {
     tree.insert(b"284acat", b"cat");
 
     let ((key, value), proof, commitment) = tree.generate_proof(b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc").unwrap();
+    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
 
     let ((key, value), proof, commitment) = tree.generate_proof(b"284afea09032d2daf30f98cfc36e4b2205cbf6e4edb69994c7261e6287b60609").unwrap();
+    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
     
     let ((key, value), proof, commitment) = tree.generate_proof(b"284acat").unwrap();
+    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
     
     let unknown_key_proof = tree.generate_proof(b"284acats");
     assert_eq!(unknown_key_proof, None);
-    
-    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
     
     //assert_eq!(aggregated_proof, tree.compute_commitment() - root_commitment.0);
 }
