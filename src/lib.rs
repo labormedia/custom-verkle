@@ -14,8 +14,8 @@ use rand::{
 /// A basic Verkle Tree Node
 #[derive(Debug, Clone)]
 pub enum VerkleNode {
-    InnerNode { children: BTreeMap<u8, Box<VerkleNode>>, commitment: RistrettoPoint, value: Vec<u8>},
-    LeafNode { key: Vec<u8>, value: Vec<u8>, commitment: RistrettoPoint },
+    InnerNode { children: BTreeMap<u8, Box<VerkleNode>>, commitments: Vec<(RistrettoPoint, Scalar)>, value: Vec<u8>},
+    LeafNode { key: Vec<u8>, value: Vec<u8>, commitment: (RistrettoPoint, Scalar) },
 }
 
 /// A simplified Verkle Tree implementation
@@ -28,13 +28,16 @@ pub struct VerkleTree {
 impl VerkleTree {
     /// Creates a new empty Verkle Tree
     pub fn new() -> Self {
+        let initial_key = vec![];
+        let initial_value = vec![];
+        let (commitment, blinding_factor) = Self::pedersen_commitment(&initial_key, &initial_value);
         VerkleTree {
             root: VerkleNode::InnerNode {
                 children: BTreeMap::new(),
-                commitment: RISTRETTO_BASEPOINT_POINT,
-                value: vec![]
+                commitments: vec![(commitment, blinding_factor)],
+                value: initial_value
             },
-            stored_commitment: RISTRETTO_BASEPOINT_POINT,
+            stored_commitment: commitment,
         }
     }
 
@@ -46,14 +49,16 @@ impl VerkleTree {
         for byte in key {
             path.push(*byte);
             match current_node {
-                VerkleNode::InnerNode { children, .. } => {
+                VerkleNode::InnerNode { children, value: existing_value, commitments } => {
+                    let commitment = Self::pedersen_commitment(&path, value);
                     current_node = children
                         .entry(*byte)
                         .or_insert_with(|| Box::new(VerkleNode::InnerNode { 
                             children: BTreeMap::new(), 
-                            commitment: RISTRETTO_BASEPOINT_POINT,
+                            commitments: vec![commitment],
                             value: value.to_vec(),
                         }));
+                    commitments.push(commitment);
                 }
                 VerkleNode::LeafNode { key: existing_key, value: existing_value, .. } => {
                     if existing_key == key {
@@ -61,21 +66,21 @@ impl VerkleTree {
                         *current_node = VerkleNode::LeafNode {
                             key: existing_key.clone(),
                             value: value.to_vec(),
-                            commitment: Self::pedersen_commitment(key, value),
+                            commitment: Self::pedersen_commitment(existing_key, existing_value),
                         };
                         return;
                     } else {
                         // Handle key-prefix collision
                         let mut new_inner_node = VerkleNode::InnerNode {
                             children: BTreeMap::new(),
-                            commitment: RISTRETTO_BASEPOINT_POINT,
+                            commitments: vec![Self::pedersen_commitment(key, existing_value)],
                             value: existing_value.to_vec()
                         };
 
                         // Reinsert the existing leaf node into the new inner node
                         if let VerkleNode::InnerNode { ref mut children, .. } = new_inner_node {
-                            // let existing_byte = existing_key[path.len()];
-                            // children.insert(existing_byte, Box::new(current_node.clone()));
+                            let existing_byte = key[path.len()-1];
+                            children.insert(existing_byte, Box::new(current_node.clone()));
                         }
 
                         // Replace the current node with the new inner node
@@ -108,11 +113,11 @@ impl VerkleTree {
     }
     
     /// Computes a Pedersen commitment for a key-value pair
-    fn pedersen_commitment(key: &[u8], value: &[u8]) -> RistrettoPoint {
+    fn pedersen_commitment(key: &[u8], value: &[u8]) -> (RistrettoPoint, Scalar) {
         let mut rng = OsRng;
         let r = Scalar::random(&mut rng);
         let value_scalar = Scalar::hash_from_bytes::<Sha512>(value);
-        r * RISTRETTO_BASEPOINT_POINT + value_scalar * RISTRETTO_BASEPOINT_POINT
+        (r * RISTRETTO_BASEPOINT_POINT + value_scalar * RISTRETTO_BASEPOINT_POINT, r)
     }
 
     /// Retrieves a value given a key
@@ -134,7 +139,7 @@ impl VerkleTree {
         
         match current_node {
             VerkleNode::LeafNode { value, .. } => Some(value),
-            VerkleNode::InnerNode { children, commitment, value } => Some(value),
+            VerkleNode::InnerNode { children, commitments, value } => Some(value),
             _ => unreachable!(),
         }
     }
@@ -149,15 +154,15 @@ impl VerkleTree {
     // Computes commitment
     pub fn compute_commitment_recursive(node: &mut VerkleNode) -> RistrettoPoint {
         match node {
-            VerkleNode::InnerNode { children, commitment, value } => {
-                let mut combined_commitment = RISTRETTO_BASEPOINT_POINT;
+            VerkleNode::InnerNode { children, commitments, value } => {
+                let mut combined_commitment: RistrettoPoint = commitments.iter().map( |x| x.0).sum();
                 for child in children.values_mut() {
                     combined_commitment += Self::compute_commitment_recursive(child);
                 }
-                *commitment = combined_commitment;
+                //*commitments.push(combined_commitment);
                 combined_commitment
             }
-            VerkleNode::LeafNode { commitment, .. } => *commitment,
+            VerkleNode::LeafNode { commitment, .. } => commitment.0,
         }
     }
 
@@ -168,14 +173,14 @@ impl VerkleTree {
     }
 
     /// Generates a proof for a given key
-    pub fn generate_proof(&self, key: &[u8]) -> Option<(Vec<u8>, Vec<RistrettoPoint>, RistrettoPoint)> {
+    pub fn generate_proof(&self, key: &[u8]) -> Option<(Vec<u8>, Vec<RistrettoPoint>, (RistrettoPoint, Scalar))> {
         let mut current_node = &self.root;
         let mut proof = Vec::new();
 
         for byte in key {
             match current_node {
-                VerkleNode::InnerNode { children, commitment, value } => {
-                    proof.push(*commitment);
+                VerkleNode::InnerNode { children, commitments, value } => {
+                    proof.push(commitments.iter().map( |x| x.0).sum::<RistrettoPoint>());
                     if let Some(child) = children.get(byte) {
                         current_node = child;
                     } else {
