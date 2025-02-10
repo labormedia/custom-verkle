@@ -26,7 +26,7 @@ pub struct VerkleTree {
 }
 
 impl VerkleTree {
-    /// Creates a new empty Verkle Tree
+    /// Creates a new empty Verkle Tree with VerkleNode::InnerNode. This is important because VerkleNode::LeafNode are terminating logic.
     pub fn new() -> Self {
         let initial_key = vec![];
         let initial_value = vec![];
