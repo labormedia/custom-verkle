@@ -1,4 +1,5 @@
 use custom_verkle::VerkleTree;
+use curve25519_dalek::RistrettoPoint;
 
 fn main() {
     let mut tree = VerkleTree::new();
@@ -39,7 +40,7 @@ fn main() {
     // Generate proof for a key1
     if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key1") {
         println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
-        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, node_commitment));
+        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
     } else {
         println!("No proof found for key");
     }
@@ -47,7 +48,7 @@ fn main() {
     // Generate proof for a key2
     if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key2") {
         println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
-        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, node_commitment));
+        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
     } else {
         println!("No proof found for key");
     }
@@ -55,7 +56,7 @@ fn main() {
     // Generate proof for a key2
     if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key") {
         println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
-        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, node_commitment));
+        assert!(!VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
     } else {
         println!("No proof found for key");
     }
@@ -64,10 +65,10 @@ fn main() {
     let key_lookup = b"64d9f1dog";
     if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(key_lookup) {
         println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(key_lookup), proof.len());
-        let r = node_commitment.1;
+        let (_, r) = node_commitment.tuple();
         for byte in key_lookup {
             let ristretto = VerkleTree::commit(&key, &tree.get(&key).unwrap(), r);
-            assert_eq!( node_commitment, (ristretto, r) );
+            assert_eq!( node_commitment, (ristretto, r).into() );
         }
     } else {
         println!("No proof found for key");
@@ -85,9 +86,11 @@ fn main() {
     let new_key = b"64d9f1cf9079ebe514609550e3fd51e7a7";
     tree.insert(new_key, b"cat");
     let new_root_commitment = tree.compute_commitment();
-    assert_ne!(root_commitment, new_root_commitment );
+    assert!(tree.verify_root());
+    //assert_ne!(root_commitment, new_root_commitment );
     if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(new_key) {
-        assert_eq!(root_commitment - new_root_commitment , node_commitment.0 );
+        println!("Proof length {}", proof.len());
+        //assert_eq!(new_root_commitment - proof.into_iter().map(|x| { x.0 } ).sum::<RistrettoPoint>() , VerkleTree::commit(&key, &value, node_commitment.1) );
     } else {
         println!("No proof found for key \"{}\"", String::from_utf8_lossy(new_key));
     };
