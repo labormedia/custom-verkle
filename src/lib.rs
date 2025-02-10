@@ -320,9 +320,7 @@ fn three_node_tree_simple() {
 fn one_node_tree() {
     let mut tree = VerkleTree::new();
     let (initial_key, initial_value): (Vec<u8>, Vec<u8>) = (vec![], vec![]);
-    println!("Generate proof for empty tree");
     let ((key, value), proof, initial_commitment) = tree.generate_proof(&initial_key).unwrap();    
-    //assert!(tree.verify_root());
     let (compare_commitment, blinding_factor_aggregate) = proof.into_iter().fold((RISTRETTO_BASEPOINT_POINT, Scalar::from(0_u64)), |mut acc, x| {
         acc.1 += x.1;
         acc.0 += x.0;
@@ -332,26 +330,20 @@ fn one_node_tree() {
     let initial_root = tree.compute_commitment();
     assert_eq!(initial_root, RISTRETTO_BASEPOINT_POINT);
     assert_eq!(initial_root, initial_commitment.0);
-
-    println!("Inserts new key of length 6");
     tree.insert(b"420000", b"cat");
-    println!("New root");
     let root_after_insertion = tree.compute_commitment();
     assert_ne!(initial_root, root_after_insertion);
     
-    println!("Generate proof");
     let ((key, value), proof, posterior_commitment) = tree.generate_proof(b"420000").unwrap();
     assert_eq!(proof.len(), 6_usize);
-    assert_eq!(proof[0].1, initial_commitment.1);
+    assert_eq!(proof[0].0, initial_root);
     
-    let (compare_commitment, blinding_factor_aggregate) = proof.into_iter().fold((RISTRETTO_BASEPOINT_POINT, Scalar::from(0_u64)), |mut acc, x| {
-        acc.1 += x.1;
-        acc.0 += x.0;
-        acc
-    });
+    let compare_commitment: RistrettoPoint = proof.into_iter().map( |x| {
+        x.0
+    }).sum();
     tree.verify_root();
     assert_eq!(root_after_insertion, tree.compute_commitment());
-    assert_eq!(root_after_insertion, initial_commitment.0 + compare_commitment);
+    assert_eq!(root_after_insertion, compare_commitment + posterior_commitment.0);
 }
 
 #[test]
