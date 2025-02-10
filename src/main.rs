@@ -39,7 +39,7 @@ fn main() {
     // Generate proof for a key1
     if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(b"key1") {
         println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(&key));
-        println!("Root Commitment: {:?}", root_commitment);
+        //println!("Root Commitment: {:?}", root_commitment);
     } else {
         println!("No proof found for key");
     }
@@ -59,10 +59,11 @@ fn main() {
     }
 
     // Generate proof for a unknown_key
-    if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(b"unknown_key") {
-        println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(&key));
+    let unknown_key = b"unknown_key";
+    if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(unknown_key) {
+        println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(unknown_key));
     } else {
-        println!("No proof found for key");
+        println!("No proof found for key \"{}\"", String::from_utf8_lossy(unknown_key));
     }
     // println!("Tree: {:?}", tree);
 }
