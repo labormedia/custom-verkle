@@ -218,6 +218,31 @@ impl VerkleTree {
             },
         }
     }
+    
+    // Traverses and counts the tree nodes.
+    pub fn count(&self) -> usize {
+        Self::count_from(&self.root, &mut 0_usize)
+    }
+    
+    // Recursive count from an origin
+    fn count_from(node: &VerkleNode, count: &mut usize) -> usize {
+        match node {
+            VerkleNode::InnerNode { children, .. } => {
+                *count += 1;
+                for (branch, node) in children.iter() {
+                    #[cfg(debug_assertions)]
+                    println!("Branch {}", branch);
+                    Self::count_from(node, count);
+                }
+                *count
+            }
+            VerkleNode::LeafNode { key, .. } => {
+                *count += 1;
+                println!("Leaf {}", String::from_utf8_lossy(key));
+                *count
+            },
+        }
+    }
 
     /// Verifies if the stored commitment matches the computed commitment
     pub fn verify_root(&mut self) -> bool {
@@ -280,9 +305,15 @@ fn empty_tree() {
 }
 
 #[test]
-fn one_node_tree_simple() {
+fn three_node_tree_simple() {
     let mut tree = VerkleTree::new();
-    tree.insert(b"aaa", b"a");
+    assert_eq!(tree.count(), 1);
+    tree.insert(b"a", b"a");
+    assert_eq!(tree.count(), 2);
+    tree.insert(b"bb", b"b");
+    assert_eq!(tree.count(), 4);
+    tree.insert(b"ccc", b"b");
+    assert_eq!(tree.count(), 7);
 }
 
 #[test]
