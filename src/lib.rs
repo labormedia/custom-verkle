@@ -338,12 +338,18 @@ fn one_node_tree() {
     assert_eq!(proof.len(), 6_usize); // The cardinality of nodes added is given by the characters to include as children from the root, in this case 6
     assert_eq!(proof[0].0, initial_root);
     
+    let blinding_factor = posterior_commitment.1;
+    
     let compare_commitment: RistrettoPoint = proof.into_iter().map( |x| {
         x.0
     }).sum();
     tree.verify_root();
     assert_eq!(root_after_insertion, tree.compute_commitment());
     assert_eq!(root_after_insertion, compare_commitment + posterior_commitment.0);
+    assert_eq!(root_after_insertion - posterior_commitment.0, compare_commitment);
+    assert_eq!(root_after_insertion - compare_commitment, posterior_commitment.0);
+    // The new root minus the sum of proofs is equal to the pedersen commit with the blinding_factor associated
+    assert_eq!(root_after_insertion - compare_commitment, VerkleTree::commit(b"420000", b"cat", blinding_factor));
 }
 
 #[test]
