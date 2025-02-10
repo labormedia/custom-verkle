@@ -17,15 +17,17 @@ fn main() {
     }
 
     // Test consistency
-    if let Some(value) = tree.get(b"unknown_key") {
+    let unknown_key = b"unknown_key";
+    if let Some(value) = tree.get(unknown_key) {
         println!("Found: {:?}", String::from_utf8_lossy(value));
     } else {
-        println!("Key not found");
+        println!("Key \"{}\" not found", String::from_utf8_lossy(unknown_key));
     }
     
     // Compute commitment
+    println!("Computing commitment");
     let commitment = tree.compute_commitment();
-    println!("Commitment: {:?}", commitment);
+    // println!("Commitment: {:?}", commitment);
     
     // Verify commitment
     if tree.verify_root() {

@@ -168,7 +168,7 @@ impl VerkleTree {
 
     /// Verifies if the stored commitment matches the computed commitment
     pub fn verify_root(&mut self) -> bool {
-        let computed_commitment = self.clone().compute_commitment();
+        let computed_commitment = self.compute_commitment();
         self.stored_commitment == computed_commitment
     }
 
@@ -209,6 +209,12 @@ impl VerkleTree {
     }
     
 
+}
+
+#[test]
+fn empty_tree() {
+    let mut tree = VerkleTree::new();
+    assert!(tree.verify_root())
 }
 
 #[test]
