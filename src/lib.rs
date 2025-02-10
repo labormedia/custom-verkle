@@ -335,7 +335,7 @@ fn one_node_tree() {
     assert_ne!(initial_root, root_after_insertion);
     
     let ((key, value), proof, posterior_commitment) = tree.generate_proof(b"420000").unwrap();
-    assert_eq!(proof.len(), 6_usize);
+    assert_eq!(proof.len(), 6_usize); // The cardinality of nodes added is given by the characters to include as children from the root, in this case 6
     assert_eq!(proof[0].0, initial_root);
     
     let compare_commitment: RistrettoPoint = proof.into_iter().map( |x| {
