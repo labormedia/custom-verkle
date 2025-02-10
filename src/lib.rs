@@ -46,7 +46,7 @@ impl VerkleTree {
         let mut current_node = &mut self.root;
         let mut path = Vec::new();
 
-        for byte in key {
+        for (position, byte) in key.into_iter().enumerate() {
             path.push(*byte);
             match current_node {
                 VerkleNode::InnerNode { children, value: existing_value, commitments } => {
@@ -64,7 +64,7 @@ impl VerkleTree {
                     if existing_key == key {
                         // If the key already exists, update the value
                         *current_node = VerkleNode::LeafNode {
-                            key: existing_key.clone(),
+                            key: key.to_vec(),
                             value: value.to_vec(),
                             commitment: Self::pedersen_commitment(existing_key, existing_value),
                         };
@@ -79,7 +79,7 @@ impl VerkleTree {
 
                         // Reinsert the existing leaf node into the new inner node
                         if let VerkleNode::InnerNode { ref mut children, .. } = new_inner_node {
-                            let existing_byte = key[path.len()-1];
+                            let existing_byte = key[position];
                             children.insert(existing_byte, Box::new(current_node.clone()));
                         }
 
@@ -100,13 +100,6 @@ impl VerkleTree {
                 }
             }
         }
-
-        // Create or update the leaf node with a new commitment
-        *current_node = VerkleNode::LeafNode {
-            key: key.to_vec(),
-            value: value.to_vec(),
-            commitment: Self::pedersen_commitment(key, value),
-        };
 
         // Recompute commitments up to the root
         self.stored_commitment = Self::compute_commitment_recursive(&mut self.root);
