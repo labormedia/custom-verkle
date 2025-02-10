@@ -80,5 +80,16 @@ fn main() {
     } else {
         println!("No proof found for key \"{}\"", String::from_utf8_lossy(unknown_key));
     }
-    // println!("Tree: {:?}", tree);
+    
+    let root_commitment = tree.compute_commitment();
+    let new_key = b"64d9f1cf9079ebe514609550e3fd51e7a7";
+    tree.insert(new_key, b"cat");
+    let new_root_commitment = tree.compute_commitment();
+    assert_ne!(root_commitment, new_root_commitment );
+    if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(new_key) {
+        assert_eq!(root_commitment - new_root_commitment , node_commitment.0 );
+    } else {
+        println!("No proof found for key \"{}\"", String::from_utf8_lossy(new_key));
+    };
+    
 }
