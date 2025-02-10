@@ -12,7 +12,7 @@ use rand::{
 };
 
 /// A basic Verkle Tree Node
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VerkleNode {
     InnerNode { children: BTreeMap<u8, Box<VerkleNode>>, commitments: Vec<(RistrettoPoint, Scalar)>, value: Vec<u8>},
     LeafNode { key: Vec<u8>, value: Vec<u8>, commitment: (RistrettoPoint, Scalar) },
@@ -100,6 +100,12 @@ impl VerkleTree {
                 }
             }
         }
+        
+        *current_node = VerkleNode::LeafNode {
+            key: key.to_vec(),
+            value: value.to_vec(),
+            commitment: Self::pedersen_commitment(key, value),
+        };
 
         // Recompute commitments up to the root
         self.stored_commitment = Self::compute_commitment_recursive(&mut self.root);
@@ -111,6 +117,12 @@ impl VerkleTree {
         let r = Scalar::random(&mut rng);
         let value_scalar = Scalar::hash_from_bytes::<Sha512>(value);
         (r * RISTRETTO_BASEPOINT_POINT + value_scalar * RISTRETTO_BASEPOINT_POINT, r)
+    }
+    
+    /// Commits to a key, value, blinding_factor combination.
+    pub fn commit(key: &[u8], value:&[u8], blinding_factor: Scalar) -> RistrettoPoint {
+        let value_scalar = Scalar::hash_from_bytes::<Sha512>(value);
+        blinding_factor * RISTRETTO_BASEPOINT_POINT + value_scalar * RISTRETTO_BASEPOINT_POINT
     }
     
     /// Verifies a given Pedersen commitment (revealing the secret)
@@ -133,7 +145,7 @@ impl VerkleTree {
                     } else {
                         return None;
                     }
-                }
+                },
                 _ => return None,
             }
         }
@@ -176,11 +188,11 @@ impl VerkleTree {
     pub fn generate_proof(&self, key: &[u8]) -> Option<((Vec<u8>, Vec<u8>), Vec<Vec<(RistrettoPoint, Scalar)>>, (RistrettoPoint, Scalar))> {
         let mut current_node = &self.root;
         let mut proof = Vec::new();
-
+        
         for byte in key {
             match current_node {
                 VerkleNode::InnerNode { children, commitments, value } => {
-                    proof.push(commitments.clone());
+                    if &self.root != current_node { proof.push(commitments.clone()) };
                     if let Some(child) = children.get(byte) {
                         current_node = child;
                     } else {
@@ -188,7 +200,6 @@ impl VerkleTree {
                     }
                 }
                 VerkleNode::LeafNode { key: existing_key, commitment, value:existing_value } => {
-                    println!("Touche");
                     if existing_key == key {
                         return Some(((existing_key.clone(), existing_value.clone()), proof, *commitment));
                     } else {
@@ -199,12 +210,12 @@ impl VerkleTree {
         }
         match current_node {
             VerkleNode::LeafNode { key: existing_key, commitment, value: existing_value } => {
+                println!("LeafNode");
                 Some(((existing_key.clone(), existing_value.clone()), proof, *commitment))
             },
             VerkleNode::InnerNode { commitments, value: existing_value, .. } => {
                 Some(((key.to_vec(), existing_value.clone()), proof, commitments[0]))
             },
-            _ => None,  // Key not found
         }
     }
     
@@ -257,6 +268,9 @@ fn three_key_lookup() {
     
     let ((key, value), proof, commitment) = tree.generate_proof(b"284acat").unwrap();
     assert!(VerkleTree::verify_pedersen_commitment(&key, &value, commitment));
+    
+    let unknown_key_proof = tree.get(b"284acats");
+    assert_eq!(unknown_key_proof, None);
     
     let unknown_key_proof = tree.generate_proof(b"284acats");
     assert_eq!(unknown_key_proof, None);

@@ -37,31 +37,46 @@ fn main() {
     }
 
     // Generate proof for a key1
-    if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(b"key1") {
-        println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(&key));
-        //println!("Root Commitment: {:?}", root_commitment);
+    if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key1") {
+        println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
+        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, node_commitment));
     } else {
         println!("No proof found for key");
     }
     
     // Generate proof for a key2
-    if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(b"key2") {
-        println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(&key));
+    if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key2") {
+        println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
+        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, node_commitment));
+    } else {
+        println!("No proof found for key");
+    }
+    
+    // Generate proof for a key2
+    if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key") {
+        println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
+        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, node_commitment));
     } else {
         println!("No proof found for key");
     }
     
     // Generate proof for a 64d9f1dog
-    if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(b"64d9f1dog") {
-        println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(&key));
+    let key_lookup = b"64d9f1dog";
+    if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(key_lookup) {
+        println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(key_lookup), proof.len());
+        let r = node_commitment.1;
+        for byte in key_lookup {
+            let ristretto = VerkleTree::commit(&key, &tree.get(&key).unwrap(), r);
+            assert_eq!( node_commitment, (ristretto, r) );
+        }
     } else {
         println!("No proof found for key");
     }
 
     // Generate proof for a unknown_key
     let unknown_key = b"unknown_key";
-    if let Some(((key, value), proof, root_commitment)) = tree.generate_proof(unknown_key) {
-        println!("Proof for {:?}: is valid ?", String::from_utf8_lossy(unknown_key));
+    if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(unknown_key) {
+        println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(unknown_key), proof.len());
     } else {
         println!("No proof found for key \"{}\"", String::from_utf8_lossy(unknown_key));
     }
