@@ -51,10 +51,10 @@ impl VerkleTree {
         VerkleTree {
             root: VerkleNode::InnerNode {
                 children: BTreeMap::new(),
-                commitment: (RistrettoPoint::identity(), blinding_factor).into(),
+                commitment: (commitment, blinding_factor).into(),
                 value: initial_value.clone()
             },
-            stored_commitment: (RistrettoPoint::identity(), Scalar::hash_from_bytes::<Sha512>(&initial_value)).into(),
+            stored_commitment: (commitment, Scalar::hash_from_bytes::<Sha512>(&initial_value)).into(),
             aggregated_blinding_factors: blinding_factor,
             transcript_point: RistrettoPoint::hash_from_bytes::<Sha512>(transcript),
         }
@@ -274,7 +274,10 @@ impl VerkleTree {
 
     /// Verifies if the stored commitment matches the computed commitment
     pub fn verify_root(&mut self) -> bool {
-        self.stored_commitment == Self::compute_commitment_recursive(&mut self.root).0.into()
+        let blinding_factor = self.aggregated_blinding_factors.clone();
+        let (ristretto, hashed_values) = Self::compute_commitment_recursive(&mut self.root).0.into();
+        ristretto == blinding_factor * RISTRETTO_BASEPOINT_POINT + hashed_values * RISTRETTO_BASEPOINT_POINT
+        && self.stored_commitment == Self::compute_commitment_recursive(&mut self.root).0.into()
     }
 
     /// Generates a proof for a given key
@@ -351,15 +354,11 @@ fn three_node_tree_simple() {
 fn one_node_tree() {
     let mut tree = VerkleTree::new();
     let (initial_key, initial_value): (Vec<u8>, Vec<u8>) = (vec![], vec![]);
+    let (ristretto, blinding_factor) = VerkleTree::pedersen_commitment(&initial_key, &initial_value).tuple();
     let ((key, value), proof, initial_commitment) = tree.generate_proof(&initial_key).unwrap();    
-    let (compare_commitment, blinding_factor_aggregate) = proof.into_iter().fold((RISTRETTO_BASEPOINT_POINT, Scalar::from(0_u64)), |mut acc, x| {
-        acc.1 += x.1;
-        acc.0 += x.0;
-        acc
-    });
+    let (compare_commitment, blinding_factor_aggregate) = proof.into_iter().sum::<Commitment>().tuple();
     assert_eq!(blinding_factor_aggregate, Scalar::from(0_u64));
     let (initial_root, _) = tree.compute_commitment().tuple();
-    assert_eq!(initial_root, RistrettoPoint::identity());
     assert_eq!(initial_root, initial_commitment.0);
     tree.insert(b"420000", b"cat");
     let (root_after_insertion, _) = tree.compute_commitment().tuple();
@@ -380,6 +379,7 @@ fn one_node_tree() {
     assert_eq!(root_after_insertion - posterior_commitment.0, compare_commitment);
     assert_eq!(root_after_insertion - compare_commitment, posterior_commitment.0);
     // The new root minus the sum of proofs is equal to the pedersen commit with the blinding_factor associated
+    // This is only the case only for one leaf node inserted to the tree
     assert_eq!(root_after_insertion - compare_commitment, VerkleTree::commit(b"420000", b"cat", blinding_factor));
 }
 
@@ -466,5 +466,4 @@ fn three_key_lookup() {
     
     let (desaggregated_commitment, desagreggated_hash_values) = ( root_commitment - Commitment::from((node_commitment.0, VerkleTree::hash_from_bytes(&value))) ).tuple();
     
-    // assert!( VerkleTree::verify_commitment(desagreggated_commitment) );
 }
