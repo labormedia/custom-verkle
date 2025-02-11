@@ -27,8 +27,8 @@ pub enum VerkleNode {
 #[derive(Debug, Clone)]
 pub struct VerkleTree {
     root: VerkleNode,
-    stored_commitment: RistrettoPoint,
-    aggregated_values: Scalar,
+    stored_commitment: Commitment,
+    aggregated_blinding_factors: Scalar,
     transcript_point: RistrettoPoint,
 }
 
@@ -54,8 +54,8 @@ impl VerkleTree {
                 commitment: (RistrettoPoint::identity(), blinding_factor).into(),
                 value: initial_value.clone()
             },
-            stored_commitment: RistrettoPoint::identity(),
-            aggregated_values: Scalar::hash_from_bytes::<Sha512>(&initial_value),
+            stored_commitment: (RistrettoPoint::identity(), Scalar::hash_from_bytes::<Sha512>(&initial_value)).into(),
+            aggregated_blinding_factors: blinding_factor,
             transcript_point: RistrettoPoint::hash_from_bytes::<Sha512>(transcript),
         }
     }
@@ -138,7 +138,7 @@ impl VerkleTree {
                                 .or_insert_with(|| Box::new(VerkleNode::LeafNode {
                                     key: key.to_vec(),
                                     value: value.to_vec(),
-                                    commitment: Self::pedersen_commitment(key, value),
+                                    commitment: commitment.clone(),
                                 }));
                         }
                         
@@ -148,8 +148,9 @@ impl VerkleTree {
         }
 
         // Recompute root commitment up to the root
-        let calculated_commitment: Commitment = Self::compute_commitment_recursive(&mut self.root).into();
-        self.stored_commitment = calculated_commitment.get_ristretto();
+        let (agreggated_commitment, aggregated_blinding_factors) = Self::compute_commitment_recursive(&mut self.root);
+        self.stored_commitment = agreggated_commitment.into();
+        self.aggregated_blinding_factors = aggregated_blinding_factors;
     }
     
     /// Computes a Pedersen commitment for a key-value pair
@@ -196,20 +197,23 @@ impl VerkleTree {
         }
     }
 
-    /// Computes a simple commitment (mocked with SHA-256 hash for now)
-    
+    /// Computes the root commitment
     pub fn compute_commitment(&mut self) -> Commitment {
-        Self::compute_commitment_recursive(&mut self.root).into()
+        Self::compute_commitment_recursive(&mut self.root).0.into()
     }
     
+    /// hash_from_bytes wrapped helper
     pub fn hash_from_bytes(value: &[u8]) -> Scalar {
         Scalar::hash_from_bytes::<Sha512>(value)
     }
 
-    // Computes commitment
-    pub fn compute_commitment_recursive(node: &mut VerkleNode) -> (RistrettoPoint, Scalar) {
+    /// Computes commitment
+    /// returns the equivalent to the sum of all node commitments and values aggregated to they hash in bytes
+    /// in the form (RistrettoPoint, Scalar), which can be transformed to Commitment type conveniently
+    pub fn compute_commitment_recursive(node: &mut VerkleNode) -> ((RistrettoPoint, Scalar), Scalar) {
         let mut combined_commitment: RistrettoPoint = RistrettoPoint::identity();
         let mut combined_values: Scalar = Scalar::ZERO;
+        let mut aggregated_blinded_factor: Scalar = Scalar::ZERO;
         match node {
             VerkleNode::InnerNode { children, commitment, value } => {
                 #[cfg(debug_assertions)]
@@ -219,23 +223,25 @@ impl VerkleTree {
                 println!("Compressed {:?}", to_sum.compress());
                 combined_commitment = to_sum;
                 combined_values += Self::hash_from_bytes(&value);
+                aggregated_blinded_factor += commitment.1;
                 for child in children.values_mut() {
-                    let (to_sum, values) = Self::compute_commitment_recursive(child);
+                    let ((to_sum, values), blinded_factors) = Self::compute_commitment_recursive(child); // TODO: Add blinded logic
                     #[cfg(debug_assertions)]
                     println!("Compressed {:?}", to_sum.compress());
                     combined_commitment += to_sum;
                     combined_values += values;
+                    aggregated_blinded_factor += blinded_factors;
                 }
-                (combined_commitment, combined_values)
+                ((combined_commitment, combined_values), aggregated_blinded_factor)
             }
             VerkleNode::LeafNode { commitment, value, .. } => {
                 #[cfg(debug_assertions)]
                 println!("Ending on LeafNode for compute_commitment_recursive blinding_factor {:?}", commitment.1);
-                let to_sum = commitment.0;
+                let single_commitment = commitment.0;
                 let single_value = Self::hash_from_bytes(&value);
                 #[cfg(debug_assertions)]
-                println!("Compressed {:?}", to_sum.compress());
-                (to_sum, single_value)
+                println!("Compressed {:?}", single_commitment.compress());
+                ((single_commitment, single_value), commitment.1)
             },
         }
     }
@@ -268,8 +274,7 @@ impl VerkleTree {
 
     /// Verifies if the stored commitment matches the computed commitment
     pub fn verify_root(&mut self) -> bool {
-        let (computed_commitment, aggregated_values) = Self::compute_commitment_recursive(&mut self.root);
-        self.stored_commitment == computed_commitment
+        self.stored_commitment == Self::compute_commitment_recursive(&mut self.root).0.into()
     }
 
     /// Generates a proof for a given key
@@ -439,8 +444,8 @@ fn three_key_lookup() {
     let unknown_key_proof = tree.generate_proof(b"284acats");
     assert_eq!(unknown_key_proof, None);
     
-    let ((key, value), proof, commitment) = tree.generate_proof(key1).unwrap();
-    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &commitment));
+    let ((key, value), proof, node_commitment) = tree.generate_proof(key1).unwrap();
+    assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
     
     assert_eq!(b"squirrel", tree.get(key1).unwrap());
     assert_eq!(b"dog", tree.get(key2).unwrap());
@@ -448,9 +453,9 @@ fn three_key_lookup() {
     
     assert_eq!(key.len(), proof.len());
     assert_eq!(proof[0].0, root);
-    assert_ne!(proof.last().unwrap(), &commitment);
+    assert_ne!(proof.last().unwrap(), &node_commitment);
     
-    let  root_commitment = tree.compute_commitment();
+    let root_commitment = tree.compute_commitment();
     assert!(tree.verify_root());
     let (proof_sum, _)= proof.clone().into_iter().sum::<Commitment>().tuple();
     
@@ -459,7 +464,7 @@ fn three_key_lookup() {
     
     println!("Node cardinality difference {}", tree.count() - proof.len());
     
-    let desaggregated_commitment = root_commitment - Commitment::from((commitment.0, VerkleTree::hash_from_bytes(&value)));
+    let (desaggregated_commitment, desagreggated_hash_values) = ( root_commitment - Commitment::from((node_commitment.0, VerkleTree::hash_from_bytes(&value))) ).tuple();
     
-    //assert_eq!(  );
+    // assert!( VerkleTree::verify_commitment(desagreggated_commitment) );
 }
