@@ -167,6 +167,11 @@ impl VerkleTree {
         blinding_factor * RISTRETTO_BASEPOINT_POINT + value_scalar * RISTRETTO_BASEPOINT_POINT
     }
     
+    /// Commits to a hashed value and blinding_factor combination.
+    pub fn commit_hashed_value(hash_value: &Scalar, blinding_factor: &Scalar) -> RistrettoPoint {
+        blinding_factor * RISTRETTO_BASEPOINT_POINT + hash_value * RISTRETTO_BASEPOINT_POINT
+    }
+    
     /// Verifies a given Pedersen commitment (revealing the secret)
     pub fn verify_pedersen_commitment(key: &[u8], value: &[u8], commitment: &Commitment) -> bool {
         let (ristretto, r) = commitment.tuple();
@@ -278,6 +283,12 @@ impl VerkleTree {
         let (ristretto, hashed_values) = Self::compute_commitment_recursive(&mut self.root).0.into();
         ristretto == blinding_factor * RISTRETTO_BASEPOINT_POINT + hashed_values * RISTRETTO_BASEPOINT_POINT
         && self.stored_commitment == Self::compute_commitment_recursive(&mut self.root).0.into()
+    }
+    
+    pub fn verify_desaggregated_commitment(&self, ristretto: RistrettoPoint, hash_value: Scalar, blinded_factor: Scalar) -> bool {
+        let desaggregated_blinded_factor = self.aggregated_blinding_factors - blinded_factor;
+        let (commited_proof, commited_values) = ( self.stored_commitment.clone() - (ristretto, hash_value).into() ).tuple();
+        commited_proof == Self::commit_hashed_value(&commited_values, &desaggregated_blinded_factor)
     }
 
     /// Generates a proof for a given key
@@ -446,6 +457,9 @@ fn three_key_lookup() {
     
     let ((key, value), proof, node_commitment) = tree.generate_proof(key1).unwrap();
     assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
+    
+    // Verifies desaggregaed commitment (from root)
+    assert!( tree.verify_desaggregated_commitment(node_commitment.0, VerkleTree::hash_from_bytes(&value), node_commitment.1) );
     
     assert_eq!(b"squirrel", tree.get(key1).unwrap());
     assert_eq!(b"dog", tree.get(key2).unwrap());
