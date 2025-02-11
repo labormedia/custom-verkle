@@ -27,6 +27,8 @@ pub enum VerkleNode {
 pub struct VerkleTree {
     root: VerkleNode,
     stored_commitment: RistrettoPoint,
+    aggregated_value: Scalar,
+    transcript_point: RistrettoPoint,
 }
 
 impl Commitment {
@@ -41,13 +43,16 @@ impl VerkleTree {
         let initial_key = vec![];
         let initial_value = vec![];
         let (commitment, blinding_factor) = Self::pedersen_commitment(&initial_key, &initial_value).tuple();
+        let transcript = b"transcript";
         VerkleTree {
             root: VerkleNode::InnerNode {
                 children: BTreeMap::new(),
                 commitment: (RISTRETTO_BASEPOINT_POINT, blinding_factor).into(),
-                value: initial_value
+                value: initial_value.clone()
             },
             stored_commitment: RISTRETTO_BASEPOINT_POINT,
+            aggregated_value: Scalar::hash_from_bytes::<Sha512>(&initial_value),
+            transcript_point: RistrettoPoint::hash_from_bytes::<Sha512>(transcript),
         }
     }
 
@@ -435,11 +440,12 @@ fn three_key_lookup() {
     
     let root_commitment = tree.compute_commitment();
     assert!(tree.verify_root());
-    let proof_sum: Commitment = proof.clone().into_iter().sum();
+    let (proof_sum, _)= proof.clone().into_iter().sum::<Commitment>().tuple();
     
     let ((_, _), overlapping_proof, overlapping_commitment) = tree.generate_proof(nodes_overlapping).unwrap();
-    let sum = commitment + overlapping_commitment;
-    let overlapping_proof_sum: Commitment = proof.into_iter().sum();
+    let (overlapping_proof_sum, _) = overlapping_proof.into_iter().sum::<Commitment>().tuple();
     
-    //assert_eq!(root_commitment - proof_sum, commitment.0);
+    println!("Node cardinality difference {}", tree.count() - proof.len());
+    
+    //assert_eq!(root_commitment - proof_sum - overlapping_proof_sum, commitment.0);
 }
