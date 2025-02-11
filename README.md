@@ -5,16 +5,16 @@ This implementation works as a proof of concept on the Pedersen commitment schem
 Debug run of the main example is full of comments about the dynamic internals.
 
 To run in debug mode:
-´´´bash
+```bash
 cargo run
-´´´
+```
 
 To run in release mode:
-´´´bash
+```bash
 cargo run --release
-´´´
+```
 
 Runing tests:
-´´´bash
+```bash
 cargo test --release
-´´´
+```
