@@ -207,7 +207,7 @@ impl VerkleTree {
         Scalar::hash_from_bytes::<Sha512>(value)
     }
 
-    /// Computes commitment
+    /// Computes root commitment
     /// returns the equivalent to the sum of all node commitments and values aggregated to they hash in bytes
     /// in the form (RistrettoPoint, Scalar), which can be transformed to Commitment type conveniently
     pub fn compute_commitment_recursive(node: &mut VerkleNode) -> ((RistrettoPoint, Scalar), Scalar) {
