@@ -28,7 +28,7 @@ pub enum VerkleNode {
 pub struct VerkleTree {
     root: VerkleNode,
     stored_commitment: RistrettoPoint,
-    aggregated_value: Scalar,
+    aggregated_values: Scalar,
     transcript_point: RistrettoPoint,
 }
 
@@ -55,7 +55,7 @@ impl VerkleTree {
                 value: initial_value.clone()
             },
             stored_commitment: RistrettoPoint::identity(),
-            aggregated_value: Scalar::hash_from_bytes::<Sha512>(&initial_value),
+            aggregated_values: Scalar::hash_from_bytes::<Sha512>(&initial_value),
             transcript_point: RistrettoPoint::hash_from_bytes::<Sha512>(transcript),
         }
     }
@@ -450,7 +450,7 @@ fn three_key_lookup() {
     assert_eq!(proof[0].0, root);
     assert_ne!(proof.last().unwrap(), &commitment);
     
-    let root_commitment = tree.compute_commitment();
+    let  root_commitment = tree.compute_commitment();
     assert!(tree.verify_root());
     let (proof_sum, _)= proof.clone().into_iter().sum::<Commitment>().tuple();
     
@@ -459,5 +459,7 @@ fn three_key_lookup() {
     
     println!("Node cardinality difference {}", tree.count() - proof.len());
     
-    //assert_eq!(root_commitment - proof_sum - overlapping_proof_sum, commitment.0);
+    let desaggregated_commitment = root_commitment - Commitment::from((commitment.0, VerkleTree::hash_from_bytes(&value)));
+    
+    //assert_eq!(  );
 }

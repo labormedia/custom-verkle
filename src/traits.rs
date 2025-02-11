@@ -1,4 +1,4 @@
-use std::ops::{ Add, Mul, AddAssign };
+use std::ops::{ Add, Mul, AddAssign, Sub };
 use std::iter::Sum;
 use crate::{ Commitment, Scalar, RistrettoPoint, RISTRETTO_BASEPOINT_POINT }; // wrapper on crate curve25519_dalek
 
@@ -12,6 +12,13 @@ impl Add for Commitment {
     type Output = Self;
     fn add(self, other: Commitment) -> Self::Output {
         (self.0 + other.0, self.1 + other.1).into()
+    }
+}
+
+impl Sub for Commitment {
+    type Output = Self;
+    fn sub(self, rhs: Commitment) -> Self::Output {
+        (self.0 - rhs.0, self.1 - rhs.1).into()
     }
 }
 
