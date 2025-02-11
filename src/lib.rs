@@ -458,7 +458,7 @@ fn three_key_lookup() {
     let ((key, value), proof, node_commitment) = tree.generate_proof(key1).unwrap();
     assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
     
-    // Verifies desaggregaed commitment (from root)
+    // Verifies desaggregated commitment (from root)
     assert!( tree.verify_desaggregated_commitment(node_commitment.0, VerkleTree::hash_from_bytes(&value), node_commitment.1) );
     
     assert_eq!(b"squirrel", tree.get(key1).unwrap());
@@ -469,15 +469,54 @@ fn three_key_lookup() {
     assert_eq!(proof[0].0, root);
     assert_ne!(proof.last().unwrap(), &node_commitment);
     
-    let root_commitment = tree.compute_commitment();
     assert!(tree.verify_root());
-    let (proof_sum, _)= proof.clone().into_iter().sum::<Commitment>().tuple();
-    
-    let ((_, _), overlapping_proof, overlapping_commitment) = tree.generate_proof(nodes_overlapping).unwrap();
-    let (overlapping_proof_sum, _) = overlapping_proof.into_iter().sum::<Commitment>().tuple();
-    
-    println!("Node cardinality difference {}", tree.count() - proof.len());
-    
-    let (desaggregated_commitment, desagreggated_hash_values) = ( root_commitment - Commitment::from((node_commitment.0, VerkleTree::hash_from_bytes(&value))) ).tuple();
     
 }
+
+#[test]
+fn desaggregate_any_value() {
+    let mut tree = VerkleTree::new();
+    
+    let first = (b"now", b"movies");
+    let second = (b"past", b"golf");
+    let third = (b"future", b"tennis");
+    let fourth = (b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc", b"284acat");
+    
+    tree.insert(first.0, first.1);
+    
+    let mut rng = OsRng;
+    let any_key = b"64d9f1cf9079ebe514609550e3fd51e7a75 any key";
+    let any_value = b"any value 64d9f1cf9079ebe514609550e3fd51e7a75";
+    let hashed_value = Scalar::hash_from_bytes::<Sha512>(any_value);
+    let r = Scalar::random(&mut rng);
+    let commit = VerkleTree::commit_hashed_value(&hashed_value, &r);
+    
+    // Verifies desaggregation of "any value"
+    assert!( tree.verify_desaggregated_commitment(commit, hashed_value, r) );
+}
+
+#[should_panic]
+#[test]
+fn failed_desaggregate_any_value() {
+    let mut tree = VerkleTree::new();
+    
+    let first = (b"now", b"movies");
+    let second = (b"past", b"golf");
+    let third = (b"future", b"tennis");
+    let fourth = (b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc", b"284acat");
+    
+    tree.insert(first.0, first.1);
+    
+    let mut rng = OsRng;
+    let any_key = b"64d9f1cf9079ebe514609550e3fd51e7a75 any key";
+    let any_value = b"any value 64d9f1cf9079ebe514609550e3fd51e7a75";
+    let hashed_value = Scalar::hash_from_bytes::<Sha512>(any_value);
+    let r = Scalar::random(&mut rng);
+    let commit = VerkleTree::commit_hashed_value(&hashed_value, &r);
+    let another_hashed_value = Scalar::hash_from_bytes::<Sha512>(b"distinct");
+    
+    // Verifies desaggregation of "any value"
+    assert!( tree.verify_desaggregated_commitment(commit, another_hashed_value, r) );
+}
+    
+    
