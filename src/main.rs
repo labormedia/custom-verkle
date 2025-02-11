@@ -56,7 +56,7 @@ fn main() {
     // Generate proof for a key2
     if let Some(((key, value), proof, node_commitment)) = tree.generate_proof(b"key") {
         println!("Proof for {:?}: is valid with length {}", String::from_utf8_lossy(&key), proof.len());
-        assert!(!VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
+        assert!(VerkleTree::verify_pedersen_commitment(&key, &value, &node_commitment));
     } else {
         println!("No proof found for key");
     }
