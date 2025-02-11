@@ -6,6 +6,7 @@ use sha2::{Digest, Sha512};
 pub use curve25519_dalek::scalar::Scalar;
 pub use curve25519_dalek::ristretto::RistrettoPoint;
 pub use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+pub use curve25519_dalek::traits::Identity;
 use rand::{
     CryptoRng,
     rngs::OsRng,
@@ -35,6 +36,9 @@ impl Commitment {
     pub fn tuple(&self) -> (RistrettoPoint, Scalar) {
         (self.0, self.1)
     }
+    pub fn get_ristretto(&self) -> RistrettoPoint {
+        self.0
+    }
 }
 
 impl VerkleTree {
@@ -47,10 +51,10 @@ impl VerkleTree {
         VerkleTree {
             root: VerkleNode::InnerNode {
                 children: BTreeMap::new(),
-                commitment: (RISTRETTO_BASEPOINT_POINT, blinding_factor).into(),
+                commitment: (RistrettoPoint::identity(), blinding_factor).into(),
                 value: initial_value.clone()
             },
-            stored_commitment: RISTRETTO_BASEPOINT_POINT,
+            stored_commitment: RistrettoPoint::identity(),
             aggregated_value: Scalar::hash_from_bytes::<Sha512>(&initial_value),
             transcript_point: RistrettoPoint::hash_from_bytes::<Sha512>(transcript),
         }
@@ -144,7 +148,8 @@ impl VerkleTree {
         }
 
         // Recompute root commitment up to the root
-        self.stored_commitment = Self::compute_commitment_recursive(&mut self.root);
+        let calculated_commitment: Commitment = Self::compute_commitment_recursive(&mut self.root).into();
+        self.stored_commitment = calculated_commitment.get_ristretto();
     }
     
     /// Computes a Pedersen commitment for a key-value pair
@@ -193,14 +198,18 @@ impl VerkleTree {
 
     /// Computes a simple commitment (mocked with SHA-256 hash for now)
     
-    pub fn compute_commitment(&mut self) -> RistrettoPoint {
-        Self::compute_commitment_recursive(&mut self.root)
+    pub fn compute_commitment(&mut self) -> Commitment {
+        Self::compute_commitment_recursive(&mut self.root).into()
     }
     
+    pub fn hash_from_bytes(value: &[u8]) -> Scalar {
+        Scalar::hash_from_bytes::<Sha512>(value)
+    }
 
     // Computes commitment
-    pub fn compute_commitment_recursive(node: &mut VerkleNode) -> RistrettoPoint {
-        let mut combined_commitment: RistrettoPoint = RISTRETTO_BASEPOINT_POINT;
+    pub fn compute_commitment_recursive(node: &mut VerkleNode) -> (RistrettoPoint, Scalar) {
+        let mut combined_commitment: RistrettoPoint = RistrettoPoint::identity();
+        let mut combined_values: Scalar = Scalar::ZERO;
         match node {
             VerkleNode::InnerNode { children, commitment, value } => {
                 #[cfg(debug_assertions)]
@@ -209,21 +218,24 @@ impl VerkleTree {
                 #[cfg(debug_assertions)]
                 println!("Compressed {:?}", to_sum.compress());
                 combined_commitment = to_sum;
+                combined_values += Self::hash_from_bytes(&value);
                 for child in children.values_mut() {
-                    let to_sum = Self::compute_commitment_recursive(child);
+                    let (to_sum, values) = Self::compute_commitment_recursive(child);
                     #[cfg(debug_assertions)]
                     println!("Compressed {:?}", to_sum.compress());
                     combined_commitment += to_sum;
+                    combined_values += values;
                 }
-                combined_commitment
+                (combined_commitment, combined_values)
             }
-            VerkleNode::LeafNode { commitment, .. } => {
+            VerkleNode::LeafNode { commitment, value, .. } => {
                 #[cfg(debug_assertions)]
                 println!("Ending on LeafNode for compute_commitment_recursive blinding_factor {:?}", commitment.1);
                 let to_sum = commitment.0;
+                let single_value = Self::hash_from_bytes(&value);
                 #[cfg(debug_assertions)]
                 println!("Compressed {:?}", to_sum.compress());
-                to_sum
+                (to_sum, single_value)
             },
         }
     }
@@ -256,7 +268,7 @@ impl VerkleTree {
 
     /// Verifies if the stored commitment matches the computed commitment
     pub fn verify_root(&mut self) -> bool {
-        let computed_commitment = Self::compute_commitment_recursive(&mut self.root);
+        let (computed_commitment, aggregated_values) = Self::compute_commitment_recursive(&mut self.root);
         self.stored_commitment == computed_commitment
     }
 
@@ -341,11 +353,11 @@ fn one_node_tree() {
         acc
     });
     assert_eq!(blinding_factor_aggregate, Scalar::from(0_u64));
-    let initial_root = tree.compute_commitment();
-    assert_eq!(initial_root, RISTRETTO_BASEPOINT_POINT);
+    let (initial_root, _) = tree.compute_commitment().tuple();
+    assert_eq!(initial_root, RistrettoPoint::identity());
     assert_eq!(initial_root, initial_commitment.0);
     tree.insert(b"420000", b"cat");
-    let root_after_insertion = tree.compute_commitment();
+    let (root_after_insertion, _) = tree.compute_commitment().tuple();
     assert_ne!(initial_root, root_after_insertion);
     
     let ((key, value), proof, posterior_commitment) = tree.generate_proof(b"420000").unwrap();
@@ -358,7 +370,7 @@ fn one_node_tree() {
         x.0
     }).sum();
     tree.verify_root();
-    assert_eq!(root_after_insertion, tree.compute_commitment());
+    assert_eq!(root_after_insertion, tree.compute_commitment().tuple().0);
     assert_eq!(root_after_insertion, compare_commitment + posterior_commitment.0);
     assert_eq!(root_after_insertion - posterior_commitment.0, compare_commitment);
     assert_eq!(root_after_insertion - compare_commitment, posterior_commitment.0);
@@ -400,7 +412,7 @@ fn short_keys() {
 fn three_key_lookup() {
     let mut tree = VerkleTree::new();
     
-    let root = tree.compute_commitment();
+    let (root, _) = tree.compute_commitment().tuple();
     
     // Insert values
     let key1 = b"64d9f1cf9079ebe514609550e3fd51e7a75ee11ece137f39fb64ccb31d720bbc";
